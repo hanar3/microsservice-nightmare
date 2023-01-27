@@ -11,7 +11,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let svc_name = b"bank_server";
     let cmd = b"npm";
     let args = b"run,debug";
-    let path = b"/Users/hanar3/Documents/bitbucket/Etana/bank_server";
+    let path = b"/Users/hanar3/Documents/bitbucket/Etana/bankprov";
 
     let attach_svc = AttachService {
         cmd_len: cmd.len() as u8,
