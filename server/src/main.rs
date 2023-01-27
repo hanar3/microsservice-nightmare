@@ -20,7 +20,6 @@ struct PacketHead {
 struct Message {
     id: u8,
 
-
     data_size: u8, 
     #[deku(count = "data_size")]
     data: Vec<u8>,
@@ -40,7 +39,11 @@ struct AttachService {
 
     cmd_len: u8,
     #[deku(count = "cmd_len")]
-    cmd: Vec<u8> 
+    cmd: Vec<u8>,
+
+    cmd_args_len: u8,
+    #[deku(count ="cmd_args_len")]
+    cmd_args: Vec<u8>,
 }
 
 
@@ -78,17 +81,18 @@ impl Message {
             let svc_name = std::str::from_utf8(&attach_service.svc_name).unwrap();
             let svc_path = std::str::from_utf8(&attach_service.svc_path).unwrap();
             let shell_cmd = std::str::from_utf8(&attach_service.cmd).unwrap();
+            let cmd_args: Vec<&str> = std::str::from_utf8(&attach_service.cmd_args).unwrap().split(",").collect();
 
-            let mut child = Command::new("npm")
-                .args(&["run", "debug"])
-                .current_dir("/Users/hanar3/Documents/bitbucket/Etana/bank_server")
+            let mut child = Command::new(shell_cmd)
+                .args(&cmd_args[..])
+                .current_dir(svc_path)
                 .stderr(Stdio::piped())
                 .stdout(std::process::Stdio::piped())
-                .spawn()
-                .expect("Failed to spawn NodeJS process");
-
+                .spawn() .expect("Failed to spawn NodeJS process");
 
             let mut stdout = child.stdout.take().unwrap();
+
+           debug!("Attaching service: {}, at: {}, with command: {} and args: {:?}", svc_name.clone(), svc_path, shell_cmd, cmd_args);
             tokio::spawn(async move {
                 let mut stdout_buf = [0; 4096];
                 loop {
@@ -96,7 +100,7 @@ impl Message {
                         Ok(n) if n == 0 => break,
                         Ok(n) => {
                             let output = std::str::from_utf8(&stdout_buf[..n]).unwrap();
-                            println!("{}", output);
+                            info!("service: {}", output);
                         }
                         Err(e) => {
                             println!("Error reading stdout: {}", e);
@@ -105,7 +109,6 @@ impl Message {
                     }
                 }
             });
-           debug!("Attaching service: {}, at: {}, with command: {}", svc_name, svc_path, shell_cmd);
            },
            AppCommand::DetachService => {} } 
     }
@@ -115,20 +118,18 @@ impl Message {
 #[allow(unreachable_code)]
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut listener = TcpListener::bind("127.0.0.1:8080").await?;
+    let listener = TcpListener::bind("127.0.0.1:8080").await?;
     env_logger::init_from_env(Env::default().default_filter_or("server"));
-    let attach_service_example =  AttachService { name_len: 4, svc_name: vec![0x54, 0x45, 0x53, 0x54], svc_type: 0x1, svc_path_len: 0, svc_path: vec![], cmd_len: 4, cmd: vec![0x65,0x63,0x68,0x6F]  };
-    let message = Message { id: 1, data_size: 12, data: AttachService::to_bytes(&attach_service_example).unwrap() };
-    println!("Messagw bytes: {:x?}", Message::to_bytes(&message));
 
     loop {
-        let (socket, host) = listener.accept().await?;
+        let (mut socket, host) = listener.accept().await?;
         tokio::spawn(async move {
             info!("Connection received from IP {}", host.ip());
-            let mut reader = BufReader::new(socket);
+            let (reader, mut writer) = socket.split();
+            let mut buf_reader = BufReader::new(reader);
             let mut buffer = [0; 1024];
 
-            while let Ok(n) = reader.read(&mut buffer[..]).await {
+            while let Ok(n) = buf_reader.read(&mut buffer[..]).await {
                 if n == 0 {
                     info!("Closed connection with IP {}", host.ip());
                     break;
@@ -138,10 +139,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if packet_head.id <= 0 { panic!("Message ID cannot be 0"); }
                 
                 let msg_bytes = std::mem::size_of::<PacketHead>() + (packet_head.data_size as usize);                
-
+                info!("packet_head {:?}", packet_head);  
                 let message = Message::try_from(&buffer[0..msg_bytes]).unwrap(); 
     
                 message.parse_command().await; 
+                writer.write(b"ok").await.unwrap();    
             }
         });
     }
