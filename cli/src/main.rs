@@ -1,7 +1,7 @@
 use deku::prelude::*;
 use std::error::Error;
 use tokio::{io::AsyncReadExt, net::TcpStream};
-use packet::{Message, AttachService};
+use packet::{Message, Service};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -13,7 +13,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let args = b"run,debug";
     let path = b"/Users/hanar3/Documents/bitbucket/Etana/bankprov";
 
-    let attach_svc = AttachService {
+    let attach_svc = Service {
         cmd_len: cmd.len() as u8,
         cmd: cmd.to_vec(),
 
@@ -29,7 +29,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         svc_path_len: path.len() as u8,
     };
 
-    let attach_svc_bytes = AttachService::to_bytes(&attach_svc).unwrap();
+    let attach_svc_bytes = Service::to_bytes(&attach_svc).unwrap();
 
     let attach_service_msg = Message {
         id: 0x01,
@@ -40,7 +40,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let msg_bytes = Message::to_bytes(&attach_service_msg).unwrap();
     println!(
         "Attach service size {}",
-        std::mem::size_of::<AttachService>()
+        std::mem::size_of::<Service>()
     );
     println!("Sending bytes: {:?}", msg_bytes);
     // Send a message to the server

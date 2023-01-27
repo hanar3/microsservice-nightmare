@@ -15,7 +15,7 @@ pub struct Message {
 }
 
 #[derive(Debug, DekuRead, DekuWrite)]
-pub struct AttachService {
+pub struct Service {
     pub name_len: u8,
     #[deku( count = "name_len")]
     pub svc_name: Vec<u8>,
