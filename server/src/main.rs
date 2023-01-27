@@ -1,13 +1,10 @@
-use std::io::Cursor;
-use std::mem::size_of;
 use std::process::Stdio;
-
 use env_logger::{self, Env};
 use log::{debug, info};
 use packet::{AppCommand, AttachService, Message, PacketHead};
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter, Stdout};
-use tokio::net::{TcpListener, TcpStream};
-use tokio::process::{Command};
+use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::net::TcpListener;
+use tokio::process::Command;
 
 async fn parse_command(msg: Message) {
     let cmd = AppCommand::try_from(msg.id).unwrap();

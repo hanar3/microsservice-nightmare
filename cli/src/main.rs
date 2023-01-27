@@ -1,46 +1,13 @@
 use deku::prelude::*;
 use std::error::Error;
 use tokio::{io::AsyncReadExt, net::TcpStream};
-
-#[derive(Debug, DekuRead, DekuWrite)]
-struct PacketHead {
-    id: u8,
-    data_size: u8,
-}
-#[derive(Debug, DekuRead, DekuWrite)]
-struct Message {
-    id: u8,
-
-    data_size: u8,
-    #[deku(count = "data_size")]
-    data: Vec<u8>,
-}
-
-#[derive(Debug, DekuRead, DekuWrite)]
-struct AttachService {
-    name_len: u8,
-    #[deku(count = "name_len")]
-    svc_name: Vec<u8>,
-
-    svc_type: u8,
-
-    svc_path_len: u8,
-    #[deku(count = "svc_path_len")]
-    svc_path: Vec<u8>,
-
-    cmd_len: u8,
-    #[deku(count = "cmd_len")]
-    cmd: Vec<u8>,
-
-    cmd_args_len: u8,
-    #[deku(count = "cmd_args_len")]
-    cmd_args: Vec<u8>,
-}
+use packet::{Message, AttachService};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
-    let (mut reader, mut writer) = stream.split();
+    let (mut reader, writer) = stream.split();
+
     let svc_name = b"bank_server";
     let cmd = b"npm";
     let args = b"run,debug";
