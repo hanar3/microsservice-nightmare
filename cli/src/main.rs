@@ -1,17 +1,17 @@
 use deku::prelude::*;
+use packet::{Message, Service};
 use std::error::Error;
 use tokio::{io::AsyncReadExt, net::TcpStream};
-use packet::{Message, Service};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
     let (mut reader, writer) = stream.split();
 
-    let svc_name = b"bank_server";
+    let svc_name = b"subcustodian";
     let cmd = b"npm";
     let args = b"run,debug";
-    let path = b"/Users/hanar3/Documents/bitbucket/Etana/bankprov";
+    let path = b"/Users/hanar3/Documents/bitbucket/Etana/subcustodian_server/";
 
     let attach_svc = Service {
         cmd_len: cmd.len() as u8,
@@ -27,6 +27,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
         svc_path: path.to_vec(),
         svc_path_len: path.len() as u8,
+        svc_port: 5002,
     };
 
     let attach_svc_bytes = Service::to_bytes(&attach_svc).unwrap();
@@ -38,10 +39,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     };
 
     let msg_bytes = Message::to_bytes(&attach_service_msg).unwrap();
-    println!(
-        "Attach service size {}",
-        std::mem::size_of::<Service>()
-    );
+    println!("Attach service size {}", std::mem::size_of::<Service>());
     println!("Sending bytes: {:?}", msg_bytes);
     // Send a message to the server
     writer.try_write(&msg_bytes[..]).unwrap();

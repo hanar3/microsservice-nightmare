@@ -9,7 +9,7 @@ pub struct PacketHeader {
 #[derive(Debug, DekuRead, DekuWrite)]
 pub struct Message {
     pub id: u8,
-    pub data_size: u8, 
+    pub data_size: u8,
     #[deku(count = "data_size")]
     pub data: Vec<u8>,
 }
@@ -17,11 +17,11 @@ pub struct Message {
 #[derive(Debug, DekuRead, DekuWrite)]
 pub struct Service {
     pub name_len: u8,
-    #[deku( count = "name_len")]
+    #[deku(count = "name_len")]
     pub svc_name: Vec<u8>,
 
     pub svc_type: u8,
-    
+
     pub svc_path_len: u8,
     #[deku(count = "svc_path_len")]
     pub svc_path: Vec<u8>,
@@ -31,10 +31,11 @@ pub struct Service {
     pub cmd: Vec<u8>,
 
     pub cmd_args_len: u8,
-    #[deku(count ="cmd_args_len")]
+    #[deku(count = "cmd_args_len")]
     pub cmd_args: Vec<u8>,
-}
 
+    pub svc_port: u16,
+}
 
 pub enum PacketId {
     AttachService = 0x1,
@@ -48,9 +49,7 @@ impl TryFrom<u8> for PacketId {
         match value {
             0x1 => Ok(PacketId::AttachService),
             0x2 => Ok(PacketId::DetachService),
-            _ => Err("Command can only include known values to the Command enum")
-        }    
+            _ => Err("Command can only include known values to the Command enum"),
+        }
     }
 }
-
-

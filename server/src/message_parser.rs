@@ -4,7 +4,7 @@ use packet::{Message, PacketId, Service};
 
 // Message is the most primitive type, it simply takes an ID and a blob of data
 // Here, let's parse the message into something meaningful
-pub async fn parse_message(msg: Message) {
+pub fn parse_message(msg: Message) {
     let cmd = PacketId::try_from(msg.id).unwrap();
 
     match cmd {
@@ -15,7 +15,7 @@ pub async fn parse_message(msg: Message) {
 
             let attachable = Attachable::try_from(service).unwrap();
 
-            let mut service_attacher = SERVICE_ATTACHER.write().await;
+            let mut service_attacher = SERVICE_ATTACHER.write().unwrap();
             service_attacher.attach(attachable);
         }
         PacketId::DetachService => {}
