@@ -1,5 +1,13 @@
 use crate::prelude::*;
-use std::{collections::HashMap, path::PathBuf, process::Stdio, sync::mpsc, thread::{self, JoinHandle}, process::{Child, Command}, io::Read};
+use std::{
+    collections::HashMap,
+    io::Read,
+    path::PathBuf,
+    process::Stdio,
+    process::{Child, Command},
+    sync::mpsc,
+    thread::{self, JoinHandle},
+};
 
 use actix_web::{
     dev::{Server, ServerHandle},
@@ -99,14 +107,11 @@ impl ServiceAttacher {
             .spawn()
             .expect("Failed to spawn process");
 
-        // Save child handle 
+        // Save child handle
         let mut stdout = child.stdout.take().unwrap();
         attachable.child_process = Some(child);
 
-
-
-
-       let thread_handle = thread::spawn(move || {
+        let thread_handle = thread::spawn(move || {
             let mut stdout_buf = [0; 4096];
 
             loop {
@@ -125,7 +130,7 @@ impl ServiceAttacher {
         });
         attachable.thread_handle = Some(thread_handle);
         // Save attachable
-        self.services.insert(attachable.name.clone(), attachable);      
+        self.services.insert(attachable.name.clone(), attachable);
         self.attach_http_services();
     }
 
@@ -136,24 +141,26 @@ impl ServiceAttacher {
             rt::System::new().block_on(handle.stop(true));
         };
 
-        let http_service_map: HashMap<String, HttpAttachable>  = self.services.iter().fold(HashMap::new(), |mut acc, value| {
-            let (_, service) = value;
-            if service.attachable_type == 1 {
-                acc.insert(service.name.clone(), HttpAttachable::try_from(service).unwrap());
-            }
-            return acc;
-        });
-
+        let http_service_map: HashMap<String, HttpAttachable> =
+            self.services.iter().fold(HashMap::new(), |mut acc, value| {
+                let (_, service) = value;
+                if service.attachable_type == 1 {
+                    acc.insert(
+                        service.name.clone(),
+                        HttpAttachable::try_from(service).unwrap(),
+                    );
+                }
+                return acc;
+            });
 
         let (tx, rx) = mpsc::channel();
-        log::info!("spawning thread for server");
+        log::debug!("spawning thread for server");
         thread::spawn(move || {
             let server_future = run_http_server(tx, http_service_map.clone());
             rt::System::new().block_on(server_future)
         });
 
         self.http_server_handle = Some(rx.recv().unwrap());
- 
     }
 }
 
@@ -166,18 +173,26 @@ async fn forward_request(
     body: web::Bytes,
 ) -> impl Responder {
     info!("Received a new request, attempting to find a service to route it to");
-    let path_no_leading  = req.path().chars().skip(1).collect::<String>(); // Remove the leading / from
-                                                                      // the path
+    let path_no_leading = req.path().chars().skip(1).collect::<String>(); // Remove the leading / from
+                                                                          // the path
     let path_parts: Vec<&str> = path_no_leading.split("/").collect();
 
     debug!("path_stem: {}, path_parts: {:?}", path_parts[0], path_parts);
-    let path_to_forward = if path_parts.len() > 1  { f!("{}", path_parts[1..].join("/")) } else { "".to_string() };
+    let path_to_forward = if path_parts.len() > 1 {
+        f!("{}", path_parts[1..].join("/"))
+    } else {
+        "".to_string()
+    };
     debug!("path_to_forward: {}", path_to_forward);
 
     let service_to_forward = http_services.get(path_parts[0]).unwrap();
 
     // Construct request URL
-   let request_url = f!("http://localhost:{}/{}", service_to_forward.port, path_to_forward); 
+    let request_url = f!(
+        "http://localhost:{}/{}",
+        service_to_forward.port,
+        path_to_forward
+    );
 
     let actix_headers = req.headers().clone();
     let mut reqwest_headers = header::HeaderMap::new();
@@ -200,7 +215,7 @@ async fn forward_request(
 
 async fn run_http_server(
     tx: mpsc::Sender<ServerHandle>,
-    http_services: HashMap<String, HttpAttachable> 
+    http_services: HashMap<String, HttpAttachable>,
 ) -> Result<()> {
     info!("starting HTTP server at localhost:9000");
 
