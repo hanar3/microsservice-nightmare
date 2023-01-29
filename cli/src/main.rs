@@ -8,10 +8,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
     let (mut reader, writer) = stream.split();
 
-    let svc_name = b"subcustodian";
+    let svc_name = b"bank";
     let cmd = b"npm";
     let args = b"run,debug";
-    let path = b"/Users/hanar3/Documents/bitbucket/Etana/subcustodian_server/";
+    let path = b"/Users/hanar3/Documents/bitbucket/Etana/bank_server/";
 
     let attach_svc = Service {
         cmd_len: cmd.len() as u8,
@@ -27,7 +27,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
         svc_path: path.to_vec(),
         svc_path_len: path.len() as u8,
-        svc_port: 5002,
+        svc_port: 5001,
     };
 
     let attach_svc_bytes = Service::to_bytes(&attach_svc).unwrap();

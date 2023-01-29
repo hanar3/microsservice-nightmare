@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use std::{collections::HashMap, path::PathBuf, process::Stdio, sync::mpsc, thread, process::{Child, Command}, io::Read};
+use std::{collections::HashMap, path::PathBuf, process::Stdio, sync::mpsc, thread::{self, JoinHandle}, process::{Child, Command}, io::Read};
 
 use actix_web::{
     dev::{Server, ServerHandle},
@@ -20,7 +20,9 @@ pub struct Attachable {
     pub cmd: String,
     pub cmd_args: Vec<String>,
     pub path: PathBuf,
+    pub attachable_type: u8,
     pub child_process: Option<Child>,
+    pub thread_handle: Option<JoinHandle<()>>,
     pub port: u16,
 }
 
@@ -74,6 +76,8 @@ impl TryFrom<Service> for Attachable {
             path: PathBuf::from(svc_path),
             cmd: shell_cmd.to_string(),
             cmd_args,
+            attachable_type: service.svc_type,
+            thread_handle: None,
             child_process: None,
             port: service.svc_port,
         })
@@ -95,33 +99,16 @@ impl ServiceAttacher {
             .spawn()
             .expect("Failed to spawn process");
 
+        // Save child handle 
         let mut stdout = child.stdout.take().unwrap();
         attachable.child_process = Some(child);
 
-        self.services
-            .insert(f!("{}:{}", attachable.name, attachable.id), attachable);
 
-        if let Some(handle) = &self.http_server_handle {
-            info!("Gracefully shutting down http server");
-            rt::System::new().block_on(handle.stop(true));
-        }
 
-        let http_services: Vec<HttpAttachable> = self
-            .services
-            .iter()
-            .map(|(_, attachable)| HttpAttachable::try_from(attachable).unwrap())
-            .collect();
 
-        let (tx, rx) = mpsc::channel();
-        log::info!("spawning thread for server");
-        thread::spawn(move || {
-            let server_future = run_http_server(tx, http_services.clone());
-            rt::System::new().block_on(server_future)
-        });
-
-        self.http_server_handle = Some(rx.recv().unwrap());
-        thread::spawn(move || {
+       let thread_handle = thread::spawn(move || {
             let mut stdout_buf = [0; 4096];
+
             loop {
                 match stdout.read(&mut stdout_buf) {
                     Ok(n) if n == 0 => break,
@@ -136,6 +123,37 @@ impl ServiceAttacher {
                 }
             }
         });
+        attachable.thread_handle = Some(thread_handle);
+        // Save attachable
+        self.services.insert(attachable.name.clone(), attachable);      
+        self.attach_http_services();
+    }
+
+    fn attach_http_services(&mut self) {
+        // If we already have a http server open, let's shut it down
+        if let Some(handle) = &self.http_server_handle {
+            info!("Gracefully shutting down http server");
+            rt::System::new().block_on(handle.stop(true));
+        };
+
+        let http_service_map: HashMap<String, HttpAttachable>  = self.services.iter().fold(HashMap::new(), |mut acc, value| {
+            let (_, service) = value;
+            if service.attachable_type == 1 {
+                acc.insert(service.name.clone(), HttpAttachable::try_from(service).unwrap());
+            }
+            return acc;
+        });
+
+
+        let (tx, rx) = mpsc::channel();
+        log::info!("spawning thread for server");
+        thread::spawn(move || {
+            let server_future = run_http_server(tx, http_service_map.clone());
+            rt::System::new().block_on(server_future)
+        });
+
+        self.http_server_handle = Some(rx.recv().unwrap());
+ 
     }
 }
 
@@ -144,13 +162,23 @@ impl ServiceAttacher {
 async fn forward_request(
     client: web::Data<Client>,
     req: HttpRequest,
-    path_to_url: web::Data<HashMap<String, String>>,
+    http_services: web::Data<HashMap<String, HttpAttachable>>,
     body: web::Bytes,
 ) -> impl Responder {
-    let path = req.path();
-    debug!("Received request at path: {}", path);
-    let forward_url = path_to_url.get(path).unwrap();
-    
+    info!("Received a new request, attempting to find a service to route it to");
+    let path_no_leading  = req.path().chars().skip(1).collect::<String>(); // Remove the leading / from
+                                                                      // the path
+    let path_parts: Vec<&str> = path_no_leading.split("/").collect();
+
+    debug!("path_stem: {}, path_parts: {:?}", path_parts[0], path_parts);
+    let path_to_forward = if path_parts.len() > 1  { f!("{}", path_parts[1..].join("/")) } else { "".to_string() };
+    debug!("path_to_forward: {}", path_to_forward);
+
+    let service_to_forward = http_services.get(path_parts[0]).unwrap();
+
+    // Construct request URL
+   let request_url = f!("http://localhost:{}/{}", service_to_forward.port, path_to_forward); 
+
     let actix_headers = req.headers().clone();
     let mut reqwest_headers = header::HeaderMap::new();
 
@@ -160,7 +188,7 @@ async fn forward_request(
     });
 
     let res = client
-        .request(req.method().clone(), forward_url)
+        .request(req.method().clone(), request_url)
         .headers(reqwest_headers)
         .body(body.to_vec())
         .send()
@@ -172,25 +200,20 @@ async fn forward_request(
 
 async fn run_http_server(
     tx: mpsc::Sender<ServerHandle>,
-    http_services: Vec<HttpAttachable>,
+    http_services: HashMap<String, HttpAttachable> 
 ) -> Result<()> {
     info!("starting HTTP server at localhost:9000");
-    let mut route_map: HashMap<String, String> = HashMap::new();
-
-    http_services.iter().for_each(|service| {
-        route_map.insert(f!("/{}", service.name), f!("http://localhost:{}", service.port));
-    });
-
 
     let server = HttpServer::new(move || {
         let http_client = Client::new();
-        let mut app = App::new().app_data(Data::new(http_client.clone()));
-        app = app.app_data(Data::new(route_map.clone()));
-        for service in http_services.clone() {
-            let route = f!("/{}", service.name);
-            app = app.route(route.as_str(), web::post().to(forward_request));
-        }
-
+        let app = App::new()
+            .app_data(Data::new(http_client.clone()))
+            .app_data(Data::new(http_services.clone()))
+            .route("/{tail}*", web::patch().to(forward_request))
+            .route("/{tail}*", web::put().to(forward_request))
+            .route("/{tail}*", web::delete().to(forward_request))
+            .route("/{tail}*", web::get().to(forward_request))
+            .route("/{tail}*", web::post().to(forward_request));
         return app;
     })
     .bind("127.0.0.1:9000")
