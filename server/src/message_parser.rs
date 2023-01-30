@@ -1,5 +1,6 @@
 use std::fs::File;
 use std::io::Read;
+use std::path::PathBuf;
 
 use crate::SERVICE_ATTACHER;
 use crate::{prelude::*, service_attacher::Attachable};
@@ -47,23 +48,27 @@ pub fn parse_message(msg: Message) {
                 let globals = ctx.globals();
                 let services = globals.get::<_, Table>("Services").unwrap();
                 
+                let mut service_attacher = SERVICE_ATTACHER.write().unwrap();
                 // Parsing Lua services. TODO: Better error handling / reporting
                 // Avoid just unwraping here...actually handle nils from lua
                 for item in services.pairs::<rlua::Value, rlua::Table>(){
                     let (_, service) = item.unwrap();
                     let service_name = service.get::<_, String>("name").unwrap();
                     let path = service.get::<_, String>("path").unwrap();
-                    let port = service.get::<_, i64>("port").unwrap();
+                    let port = service.get::<_, u16>("port").unwrap();
                     let service_type = service.get::<_, u8>("service_type").unwrap();
                     let cmd = service.get::<_, String>("command").unwrap();
 
                     // Extract command_args (lua table) into the args vector...is there a better
                     // way to do this?                   
                     let cmd_args = service.get::<_, Table>("command_args").unwrap();
-                    let mut args: Vec<String> = vec![];
+                    let mut args: Vec<std::string::String> = vec![];
                     for i in 1..=cmd_args.len().unwrap() {
-                        args.push(cmd_args.get(i).unwrap());
+                        args.push(cmd_args.get::<_, String>(i).unwrap());
                     }
+
+                    let attachable = Attachable::new(service_name.clone(), cmd.clone(), args.clone(), PathBuf::from(path.clone()), service_type, port); 
+                    service_attacher.attach(attachable);
                     debug!("service_name: {}, path: {}, port: {}, cmd: {}, args: {:?}, service_type: {}", service_name, path, port, cmd, args, service_type);
                 }
             });

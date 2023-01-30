@@ -34,6 +34,29 @@ pub struct Attachable {
     pub port: u16,
 }
 
+impl Attachable {
+    pub fn new(
+        name: String,
+        cmd: String,
+        cmd_args: Vec<String>,
+        path: PathBuf,
+        attachable_type: u8,
+        port: u16,
+    ) -> Attachable {
+        Attachable {
+            id: Uuid::new_v4().to_string(),
+            name,
+            cmd,
+            cmd_args,
+            path,
+            attachable_type,
+            child_process: None,
+            thread_handle: None,
+            port,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct HttpAttachable {
     pub id: String,

@@ -57,7 +57,7 @@ impl TryFrom<u8> for PacketId {
         match value {
             0x1 => Ok(PacketId::AttachService),
             0x2 => Ok(PacketId::DetachService),
-            0x3 => Ok(PacketId::LuaServices), 
+            0x3 => Ok(PacketId::LuaServices),
             _ => Err("Command can only include known values to the Command enum"),
         }
     }
