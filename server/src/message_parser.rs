@@ -23,7 +23,7 @@ pub fn parse_message(msg: Message) {
             let mut service_attacher = SERVICE_ATTACHER.write().unwrap();
             service_attacher.attach(attachable);
         },
-
+        // Loads the services from a lua file
         PacketId::LuaServices => {
             let lua_services_file = LuaServices::try_from(&msg.data[..]).unwrap();
             let filepath = std::str::from_utf8(&lua_services_file.filepath[..]).unwrap();
@@ -45,20 +45,26 @@ pub fn parse_message(msg: Message) {
             lua.context(|ctx| {
                 ctx.load(&lua_script_contents).set_name(filepath.clone()).unwrap().exec().unwrap();
                 let globals = ctx.globals();
-                let table = globals.get::<_, Table>("Services").unwrap();
-                for item in table.pairs::<rlua::Value, rlua::Table>(){
-                    let (_, inner_table) = item.unwrap();
-                    let service_name = inner_table.get::<_, String>("name").unwrap();
-                    let path = inner_table.get::<_, String>("path").unwrap();
-                    let port = inner_table.get::<_, i64>("port").unwrap();
-                    let cmd = inner_table.get::<_, String>("command").unwrap();
+                let services = globals.get::<_, Table>("Services").unwrap();
+                
+                // Parsing Lua services. TODO: Better error handling / reporting
+                // Avoid just unwraping here...actually handle nils from lua
+                for item in services.pairs::<rlua::Value, rlua::Table>(){
+                    let (_, service) = item.unwrap();
+                    let service_name = service.get::<_, String>("name").unwrap();
+                    let path = service.get::<_, String>("path").unwrap();
+                    let port = service.get::<_, i64>("port").unwrap();
+                    let service_type = service.get::<_, u8>("service_type").unwrap();
+                    let cmd = service.get::<_, String>("command").unwrap();
 
-                    let cmd_args = inner_table.get::<_, Table>("command_args").unwrap();
+                    // Extract command_args (lua table) into the args vector...is there a better
+                    // way to do this?                   
+                    let cmd_args = service.get::<_, Table>("command_args").unwrap();
                     let mut args: Vec<String> = vec![];
                     for i in 1..=cmd_args.len().unwrap() {
                         args.push(cmd_args.get(i).unwrap());
                     }
-                    debug!("service_name: {}, path: {}, port: {}, cmd: {}, args: {:?}", service_name, path, port, cmd, args);
+                    debug!("service_name: {}, path: {}, port: {}, cmd: {}, args: {:?}, service_type: {}", service_name, path, port, cmd, args, service_type);
                 }
             });
 

@@ -11,7 +11,6 @@ mod http_router;
 mod message_parser;
 mod service_attacher;
 
-#[allow(unreachable_code)]
 fn main() -> Result<()> {
     let listener = TcpListener::bind("127.0.0.1:8080").unwrap();
     env_logger::init_from_env(Env::default().default_filter_or("debug"));
@@ -27,7 +26,6 @@ fn main() -> Result<()> {
         // Extract only the valid parts of the buffer (exclude trailing 0's)
         let valid_buffer = &buffer[0..message_size];
         message_parser::parse_message(Message::try_from(valid_buffer).unwrap());
-        info!("Received data from stream: {:?}", buffer);
         stream.write(b"ok!").unwrap();
     }
 
