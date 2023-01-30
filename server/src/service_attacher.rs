@@ -6,7 +6,7 @@ use std::{
     process::Stdio,
     process::{Child, Command},
     sync::mpsc,
-    thread::{self, JoinHandle},
+    thread::{self, JoinHandle}, time::Duration,
 };
 
 use actix_web::{
@@ -156,6 +156,35 @@ impl ServiceAttacher {
         self.services.insert(attachable.name.clone(), attachable);
         self.attach_http_services();
     }
+    
+    pub fn batch_attach(&mut self, attachables: Vec<Attachable>) {
+        // Attaches an array of services
+        // Useful when attaching a service list parsed from the lua services file
+        let service_count = attachables.len();
+        debug!("Begin attaching {} services", service_count);
+        for mut attachable in attachables {
+            // Good idea to parallelize here?
+            debug!("Attaching {} on port {}", &attachable.name, &attachable.port);
+            let child = Command::new(attachable.cmd.clone())
+                .args(&attachable.cmd_args[..])
+                .current_dir(attachable.path.clone())
+                .stderr(Stdio::piped())
+                .stdout(Stdio::piped())
+                .spawn()
+                .expect("Failed to spawn process");
+
+            // Save child handle
+            attachable.child_process = Some(child);
+
+            // Save attachable
+            self.services.insert(attachable.name.clone(), attachable);
+            thread::sleep(Duration::from_secs(15)); // Add some breathing time between each
+                                                    // service... TODO: is there a way we can wait
+                                                    // for the child to finish setting up?
+        }
+        debug!("Attached {} services succesfully", service_count);
+        self.attach_http_services();
+    }
 
     fn attach_http_services(&mut self) {
         // If we already have a http server open, let's shut it down
@@ -241,9 +270,14 @@ async fn run_http_server(
     http_services: HashMap<String, HttpAttachable>,
 ) -> Result<()> {
     info!("starting HTTP server at localhost:9000");
-
     let server = HttpServer::new(move || {
         let http_client = Client::new();
+        
+        http_services.iter().for_each(|item| {
+            let (_, value) = item;
+            info!("requests to http://localhost:9000/{} are now being routed to http://localhost:{}", value.name, value.port);
+        });
+
         let app = App::new()
             .app_data(Data::new(http_client.clone()))
             .app_data(Data::new(http_services.clone()))
@@ -255,9 +289,10 @@ async fn run_http_server(
         return app;
     })
     .bind("127.0.0.1:9000")
-    .unwrap()
-    .workers(2)
-    .run();
+        .unwrap()
+        .workers(2)
+        .run();
+
 
     let _ = tx.send(server.handle());
     server.await.map_err(|e| Error::Generic(e.to_string()))

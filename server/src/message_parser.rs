@@ -50,7 +50,10 @@ pub fn parse_message(msg: Message) {
                 
                 let mut service_attacher = SERVICE_ATTACHER.write().unwrap();
                 // Parsing Lua services. TODO: Better error handling / reporting
-                // Avoid just unwraping here...actually handle nils from lua
+                // Avoid just unwraping here...actually handle nils from lua and spit meaningful
+                // errors
+
+                let mut attachables: Vec<Attachable> = vec![];
                 for item in services.pairs::<rlua::Value, rlua::Table>(){
                     let (_, service) = item.unwrap();
                     let service_name = service.get::<_, String>("name").unwrap();
@@ -68,9 +71,12 @@ pub fn parse_message(msg: Message) {
                     }
 
                     let attachable = Attachable::new(service_name.clone(), cmd.clone(), args.clone(), PathBuf::from(path.clone()), service_type, port); 
-                    service_attacher.attach(attachable);
+                    attachables.push(attachable);
                     debug!("service_name: {}, path: {}, port: {}, cmd: {}, args: {:?}, service_type: {}", service_name, path, port, cmd, args, service_type);
                 }
+                // Attach all services
+                service_attacher.batch_attach(attachables);
+
             });
 
         },
