@@ -119,10 +119,10 @@ impl ServiceAttacher {
                     Ok(n) if n == 0 => break,
                     Ok(n) => {
                         let output = std::str::from_utf8(&stdout_buf[..n]).unwrap();
-                        info!("service: {}", output);
+                        debug!("service: {}", output);
                     }
                     Err(e) => {
-                        println!("Error reading stdout: {}", e);
+                        log::error!("Error reading stdout: {}", e);
                         break;
                     }
                 }

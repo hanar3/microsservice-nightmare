@@ -40,6 +40,14 @@ pub struct Service {
 pub enum PacketId {
     AttachService = 0x1,
     DetachService = 0x2,
+    LuaServices = 0x3,
+}
+
+#[derive(Debug, DekuRead, DekuWrite)]
+pub struct LuaServices {
+    pub filepath_len: u8,
+    #[deku(count = "filepath_len")]
+    pub filepath: Vec<u8>,
 }
 
 impl TryFrom<u8> for PacketId {
@@ -49,6 +57,7 @@ impl TryFrom<u8> for PacketId {
         match value {
             0x1 => Ok(PacketId::AttachService),
             0x2 => Ok(PacketId::DetachService),
+            0x3 => Ok(PacketId::LuaServices), 
             _ => Err("Command can only include known values to the Command enum"),
         }
     }

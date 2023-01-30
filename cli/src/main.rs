@@ -1,5 +1,5 @@
 use deku::prelude::*;
-use packet::{Message, Service};
+use packet::{Message, Service, LuaServices};
 use std::error::Error;
 use tokio::{io::AsyncReadExt, net::TcpStream};
 
@@ -32,10 +32,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let attach_svc_bytes = Service::to_bytes(&attach_svc).unwrap();
 
+
+    let lua_file_path = b"/Users/hanar3/Documents/github/hanar3/localmesh/services.lua";
+    
+    let lua_services_file = LuaServices {
+        filepath_len: lua_file_path.len() as u8,
+        filepath: lua_file_path.to_vec(), 
+    };
+    
+    let lua_services_bytes = LuaServices::to_bytes(&lua_services_file).unwrap();
+
     let attach_service_msg = Message {
-        id: 0x01,
-        data_size: attach_svc_bytes.len() as u8,
-        data: attach_svc_bytes.to_vec(),
+        id: 0x3,
+        data_size: lua_services_bytes.len() as u8,
+        data: lua_services_bytes.to_vec(), 
     };
 
     let msg_bytes = Message::to_bytes(&attach_service_msg).unwrap();
