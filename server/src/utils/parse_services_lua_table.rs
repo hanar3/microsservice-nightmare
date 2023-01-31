@@ -60,6 +60,8 @@ impl Tokenizer {
             if self.position >= self.script.len() { break; } 
             let byte = self.script[self.position]; 
             println!("byte: {:x?}", byte); 
+            
+            // Handle double-quoted string
             if byte == 0x22 {
                 self.position += 1;
                 let token_bytes = self.read_until(|prev_byte, curr_byte|{ 
@@ -75,6 +77,25 @@ impl Tokenizer {
                 let value = std::str::from_utf8(&token_bytes[..]).unwrap();
                 self.tokens.push(TokenCategory::QuotedString(value.to_string()));
             }
+
+            // Single quoted strings
+            if byte == 0x27 {
+                self.position += 1;
+                let token_bytes = self.read_until(|prev_byte, curr_byte|{ 
+                    if let Some(prev) = prev_byte {
+                        if prev == 0x5c && curr_byte == &0x27 {
+                            return false; // Don't stop reading if it's a escaped quote
+                        }
+                    }
+
+                    return curr_byte == &0x27;
+                });
+
+                let value = std::str::from_utf8(&token_bytes[..]).unwrap();
+                self.tokens.push(TokenCategory::QuotedString(value.to_string()));
+            }
+            
+
 
             if byte.is_ascii_alphanumeric() {
 
@@ -162,7 +183,7 @@ mod tests {
     #[test]
     fn tokenize_keyword() {
         let script = r#"
-            local test = "\"test\"" 
+            local test = '\'test\''
         "#;
        let mut tokenizer = Tokenizer::new(script.to_string()); 
        tokenizer.tokenize();
