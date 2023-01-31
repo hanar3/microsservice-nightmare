@@ -5,25 +5,29 @@
 // this is useful so that we separate the lua code for each service and can create
 // individual contexts for our attachables
 
-use std::{str::{Chars, Bytes}, collections::HashMap};
+use std::{
+    collections::HashMap,
+    str::{Bytes, Chars},
+};
 
 use log::debug;
 
 #[derive(Debug)]
-enum TokenCategory {
+enum TokenKind {
     Ident(String),
-    Integer(usize),
+    Integer(i32),
+    Float(f32),
     QuotedString(String),
 
     OpenSquareBracket,
     CloseSquareBracket,
-    
+
     OpenParen,
     CloseParen,
-    
+
     OpenCurlyBracket,
     CloseCurlyBracket,
-    
+
     Keyword(String),
 
     Dot,
@@ -33,13 +37,13 @@ enum TokenCategory {
     Plus,
     Slash,
     Semicolon,
-    
+    Comma,
 }
 
 #[derive(Debug)]
 struct Tokenizer {
     script: Vec<u8>,
-    tokens: Vec<TokenCategory>,
+    tokens: Vec<TokenKind>,
     position: usize,
 }
 
@@ -57,14 +61,15 @@ impl Tokenizer {
         let keywords: Vec<&str> = "break,do,else,elseif,end,false,for,function,if,in,local,nil,not,or,repeat,return,then,true,until,while".split(",").collect();
         println!("Tokenize bytes: {:x?}", self.script);
         for _ in 0..self.script.len() {
-            if self.position >= self.script.len() { break; } 
-            let byte = self.script[self.position]; 
-            println!("byte: {:x?}", byte); 
-            
+            if self.position >= self.script.len() {
+                break;
+            }
+            let byte = self.script[self.position];
+
             // Handle double-quoted string
             if byte == 0x22 {
                 self.position += 1;
-                let token_bytes = self.read_until(|prev_byte, curr_byte|{ 
+                let token_bytes = self.read_until(|prev_byte, curr_byte| {
                     if let Some(prev) = prev_byte {
                         if prev == 0x5c && curr_byte == &0x22 {
                             return false; // Don't stop reading if it's a escaped quote
@@ -75,13 +80,16 @@ impl Tokenizer {
                 });
 
                 let value = std::str::from_utf8(&token_bytes[..]).unwrap();
-                self.tokens.push(TokenCategory::QuotedString(value.to_string()));
+                self.tokens
+                    .push(TokenKind::QuotedString(value.to_string()));
+                self.position += 1;
+                continue;
             }
 
             // Single quoted strings
             if byte == 0x27 {
-                self.position += 1;
-                let token_bytes = self.read_until(|prev_byte, curr_byte|{ 
+                self.position += 1; // Enter quote so we can read quote contents
+                let token_bytes = self.read_until(|prev_byte, curr_byte| {
                     if let Some(prev) = prev_byte {
                         if prev == 0x5c && curr_byte == &0x27 {
                             return false; // Don't stop reading if it's a escaped quote
@@ -92,58 +100,85 @@ impl Tokenizer {
                 });
 
                 let value = std::str::from_utf8(&token_bytes[..]).unwrap();
-                self.tokens.push(TokenCategory::QuotedString(value.to_string()));
+                self.tokens
+                    .push(TokenKind::QuotedString(value.to_string()));
+                self.position += 1; // Leave quote
+                continue;
             }
-            
 
-
-            if byte.is_ascii_alphanumeric() {
-
-                // Read until the first non-alpha
-                let token_bytes = self.read_until(|_, byte| {
-                    !byte.is_ascii_alphanumeric() && byte.to_string() != "_"
+            if byte.is_ascii_digit() {
+                let mut is_floating_point = false;
+                let token_bytes = self.read_until(|_, curr_byte| {
+                    if curr_byte == &0x2E {
+                        is_floating_point = true;
+                        return false;
+                    } else {
+                        return !curr_byte.is_ascii_digit();
+                    }
                 });
 
-                let token_str = std::str::from_utf8(&token_bytes[..]).unwrap();
-                
-                if keywords.contains(&token_str) {
-                    self.tokens.push(TokenCategory::Keyword(token_str.to_string()));
+                let token_value = std::str::from_utf8(&token_bytes[..]).unwrap();
+                if is_floating_point {
+                    let f_number = token_value.parse::<f32>().unwrap();
+                    self.tokens.push(TokenKind::Float(f_number));
                 } else {
-                    self.tokens.push(TokenCategory::Ident(token_str.to_string()));
+                    let i_number = token_value.parse::<i32>().unwrap();
+                    self.tokens.push(TokenKind::Integer(i_number));
                 }
+                continue;
+
+            }
+
+            if byte.is_ascii_alphanumeric() {
+                // Read until the first non-alpha
+                let token_bytes = self
+                    .read_until(|_, byte| !byte.is_ascii_alphanumeric() && byte != &0x5F);
+
+                let token_str = std::str::from_utf8(&token_bytes[..]).unwrap();
+
+                if keywords.contains(&token_str) {
+                    self.tokens
+                        .push(TokenKind::Keyword(token_str.to_string()));
+                } else {
+                    self.tokens
+                        .push(TokenKind::Ident(token_str.to_string()));
+                }
+                continue;
             }
 
             match byte {
                 b'-' => {
-                    self.tokens.push(TokenCategory::Minus);
-                },
+                    self.tokens.push(TokenKind::Minus);
+                }
                 b'+' => {
-                    self.tokens.push(TokenCategory::Plus);
-                },
+                    self.tokens.push(TokenKind::Plus);
+                }
                 b'*' => {
-                    self.tokens.push(TokenCategory::Asterisk);
-                },
+                    self.tokens.push(TokenKind::Asterisk);
+                }
                 b'/' => {
-                    self.tokens.push(TokenCategory::Slash);
-                },
+                    self.tokens.push(TokenKind::Slash);
+                }
                 b'{' => {
-                    self.tokens.push(TokenCategory::OpenCurlyBracket);
-                },
+                    self.tokens.push(TokenKind::OpenCurlyBracket);
+                }
                 b'}' => {
-                    self.tokens.push(TokenCategory::CloseCurlyBracket);
-                },
+                    self.tokens.push(TokenKind::CloseCurlyBracket);
+                }
                 b'(' => {
-                    self.tokens.push(TokenCategory::OpenParen);
-                },
+                    self.tokens.push(TokenKind::OpenParen);
+                }
                 b')' => {
-                    self.tokens.push(TokenCategory::CloseParen);
-                },
+                    self.tokens.push(TokenKind::CloseParen);
+                }
                 b'=' => {
-                    self.tokens.push(TokenCategory::Equal);
-                },
+                    self.tokens.push(TokenKind::Equal);
+                }
+
+                b';' => self.tokens.push(TokenKind::Dot),
+                b',' => self.tokens.push(TokenKind::Comma),
 
                 _ => {}
-
             };
 
             if byte.is_ascii_whitespace() {
@@ -151,15 +186,14 @@ impl Tokenizer {
                 continue;
             }
 
-
             self.position += 1;
         }
     }
 
-
-
-    fn read_until<F>(&mut self, mut pred: F) -> Vec<u8> where
-    F: FnMut(Option<u8>, &u8) -> bool {
+    fn read_until<F>(&mut self, mut pred: F) -> Vec<u8>
+    where
+        F: FnMut(Option<u8>, &u8) -> bool,
+    {
         let remaining_bytes = self.script.get(self.position..).unwrap();
         let mut collected: Vec<u8> = vec![];
         let mut prev_byte: Option<u8> = None;
@@ -169,10 +203,9 @@ impl Tokenizer {
             } else {
                 collected.push(byte.to_owned());
                 prev_byte = Some(byte.to_owned());
-                self.position += 1;
             }
         }
-
+        self.position += collected.len();
         return collected;
     }
 }
@@ -183,11 +216,17 @@ mod tests {
     #[test]
     fn tokenize_keyword() {
         let script = r#"
-            local test = '\'test\''
+            local test = 11.1234 
+            local test_string = "test"
+
+            function test(n)
+                a = "test"
+            end
+
         "#;
-       let mut tokenizer = Tokenizer::new(script.to_string()); 
-       tokenizer.tokenize();
-       println!("TOKENS {:?}", tokenizer.tokens);
-       assert!(1 == 1);
+        let mut tokenizer = Tokenizer::new(script.into());
+        tokenizer.tokenize();
+        println!("TOKENS {:?}", tokenizer.tokens);
+        assert!(1 == 1);
     }
 }
