@@ -218,6 +218,9 @@ mod tests {
         let script = r#"
             local test = 11.1234 
             local test_string = "test"
+            if test == 11.1234 then
+                print("hello")
+            end
 
             function test(n)
                 a = "test"
